@@ -1,0 +1,15 @@
+appname=wb2api-panel
+version=1.0.0
+display_name=WorkBuddy2API 面板
+desc=WorkBuddy 账号多协议 AI 网关与管理面板（Docker 部署，默认端口 7863）。
+source=thirdparty
+platform=x86
+maintainer=supermi13
+maintainer_url=https://github.com/supermi13/workbuddy2api-panel-plus
+os_min_version=1.2.0
+desktop_uidir=ui
+desktop_applaunchname=wb2api-panel.main
+service_port=7863
+checkport=true
+ctl_stop=true
+disable_authorization_path=true

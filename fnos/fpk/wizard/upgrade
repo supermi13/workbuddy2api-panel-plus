@@ -1,0 +1,11 @@
+[
+  {
+    "stepTitle": "升级说明",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "升级会保留已保存的账号与配置数据（@appdata/wb2api-panel），容器将按新版本镜像重建。"
+      }
+    ]
+  }
+]

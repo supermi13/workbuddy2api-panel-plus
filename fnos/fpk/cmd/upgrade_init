@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# 升级前：无需预处理（配置与数据在 @appdata，不被应用文件覆盖）。
+# 保留此文件以满足 fnpack 对 cmd/ 生命周期完整性的检查。
+exit 0

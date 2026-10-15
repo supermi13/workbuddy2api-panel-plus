@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# 升级后：与 install_callback 相同的数据目录保障（幂等，不覆盖已有配置）。
+set -u
+
+VAR_DIR="${TRIM_PKGVAR:-}"
+APPDEST="${TRIM_APPDEST:-}"
+
+[ -n "$VAR_DIR" ] || { echo "TRIM_PKGVAR 未设置：本脚本应由 fnOS 升级流程调用" >&2; exit 1; }
+
+mkdir -p "$VAR_DIR/config" "$VAR_DIR/auths" "$VAR_DIR/data"
+
+if [ ! -f "$VAR_DIR/config/config.json" ] && [ -n "$APPDEST" ] && [ -f "$APPDEST/config.example.json" ]; then
+  cp "$APPDEST/config.example.json" "$VAR_DIR/config/config.json"
+fi
+
+chown -R "${TRIM_RUN_UID:-10001}:${TRIM_RUN_GID:-10001}" "$VAR_DIR" 2>/dev/null || true
+exit 0

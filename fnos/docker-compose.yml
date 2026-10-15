@@ -1,0 +1,55 @@
+# 飞牛 fnOS 专用 Docker Compose
+#
+# 两种用法：
+#   1) SSH 直部署：把本文件 + .env.example 放到飞牛项目目录，cp .env.example .env 按需改，
+#      docker compose up -d
+#   2) fpk 应用包：飞牛应用中心安装 fpk 时由 cmd/main 注入 TRIM_PKGVAR / TRIM_RUN_UID 等
+#      环境变量后调用同一份 compose（数据落 @appdata 规范目录）
+#
+# 注意：这是「纯部署」文件，不带 build 段——镜像来自 GHCR（CI 自动构建推送）。
+# 想从源码构建见仓库根目录 docker-compose.yml（build 版）。
+
+services:
+  wb2api:
+    # 默认拉自己 CI 构建的镜像；上游 fork 的 JACKY199503 包不是我们的构建，别用
+    image: ${IMAGE:-ghcr.io/supermi13/workbuddy2api-panel-plus:latest}
+    pull_policy: ${PULL_POLICY:-always}
+    container_name: wb2api-panel
+    # fnOS 铁律：必须 always。unless-stopped 在飞牛上会被「关机先停 Docker」误判为
+    # 手动停止，开机后不自动起来
+    restart: always
+    # 镜像内是 app(uid 10001)；fnOS 上由 cmd/main 传 PUID=$TRIM_RUN_UID 对齐
+    # 挂载目录属主（install_callback 会 chown）。本地默认 10001 与镜像一致
+    user: ${PUID:-10001}:${PGID:-10001}
+    # 显式指定配置路径：配置以目录挂载（./config/config.json），
+    # 绝不挂载单个 config.json 文件——宿主缺文件时 Docker 会把挂载点建成目录，
+    # 容器直接起不来（not a directory）
+    command: ["/app/wb2api", "-config", "/app/config/config.json"]
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+    ports:
+      - "${WB2API_PORT:-7863}:7863"
+    volumes:
+      # 三个目录都支持环境变量覆盖：fnOS 上由 cmd/main 指向 TRIM_PKGVAR（@appdata），
+      # 本地/SSH 部署默认落到本目录下的 config/auths/data
+      - ${WB2API_CONFIG_DIR:-./config}:/app/config
+      - ${WB2API_AUTHS_DIR:-./auths}:/app/auths
+      - ${WB2API_DATA_DIR:-./data}:/app/data
+    extra_hosts:
+      # 让容器内能访问宿主服务（如宿主上跑的其他容器/网关）；本地 Docker Desktop 同效
+      - "host.docker.internal:host-gateway"
+    # 覆盖镜像自带 HEALTHCHECK：原版 wget 对 /healthz 返回 503 也判失败，
+    # 而「刚启动还没加账号」时 503 是正常态，会被永久标记 unhealthy。
+    # 这里放行 503（wget exit 8 = 服务端错误响应 = 进程活着），只判「连不上」为失败
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -q -O /dev/null http://127.0.0.1:7863/healthz || [ $$? -eq 8 ]"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # 首次启动要生成配置 + 加载账号，给足宽限期
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,7 @@
+{
+  "defaults": {
+    "run-as": "package"
+  },
+  "username": "wb2api-panel",
+  "groupname": "wb2api-panel"
+}

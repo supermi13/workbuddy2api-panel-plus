@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# wb2api-panel Docker 项目生命周期脚本
+# 用法: main start|stop|status
+#
+# fnOS 通过 config/resource 的 docker-project 声明管理 compose；
+# 本脚本由应用中心在启动/停止/查询状态时调用，负责注入 fnOS 规范路径
+# 并转调 docker compose。
+set -u
+
+APP_NAME="wb2api-panel"
+
+# 从脚本自身位置推导安装目录（.../target/cmd/main → .../target），
+# 无 TRIM_APPDEST 时（如手动调试）也能正确定位；不硬编码绝对路径
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+APPDEST_FALLBACK="$(dirname "$(dirname "$SELF_DIR")")"
+APPDEST="${TRIM_APPDEST:-$APPDEST_FALLBACK}"
+COMPOSE_DIR="$APPDEST/app/docker"
+COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yaml"
+
+log() { echo "[wb2api-panel] $*"; }
+
+fail() {
+  log "$*"
+  if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+    echo "$*" >> "$TRIM_TEMP_LOGFILE"
+  fi
+  exit 1
+}
+
+[ -f "$COMPOSE_FILE" ] || fail "compose 文件不存在: $COMPOSE_FILE"
+command -v docker >/dev/null 2>&1 || fail "docker 命令不可用"
+
+compose() {
+  # -p 固定项目名：compose 默认取目录名（docker）会与其他应用冲突
+  docker compose -p "$APP_NAME" -f "$COMPOSE_FILE" "$@"
+}
+
+case "${1:-}" in
+  start)
+    # fnOS 规范落点：数据目录指向 TRIM_PKGVAR（@appdata/{appname}），
+    # 容器身份对齐包用户（install_callback 已 chown，这里兜底再修一次）
+    export PUID="${TRIM_RUN_UID:-10001}"
+    export PGID="${TRIM_RUN_GID:-10001}"
+    export WB2API_CONFIG_DIR="${TRIM_PKGVAR:-$COMPOSE_DIR/data}/config"
+    export WB2API_AUTHS_DIR="${TRIM_PKGVAR:-$COMPOSE_DIR/data}/auths"
+    export WB2API_DATA_DIR="${TRIM_PKGVAR:-$COMPOSE_DIR/data}/data"
+    mkdir -p "$WB2API_CONFIG_DIR" "$WB2API_AUTHS_DIR" "$WB2API_DATA_DIR"
+    chown -R "$PUID:$PGID" "$WB2API_CONFIG_DIR" "$WB2API_AUTHS_DIR" "$WB2API_DATA_DIR" 2>/dev/null || true
+    compose up -d || fail "docker compose up -d 失败（详见 docker compose 日志）"
+    log "已启动，端口 7863"
+    ;;
+  stop)
+    compose down || true
+    log "已停止"
+    ;;
+  status)
+    # 运行中返回 0；未运行返回 3（fnOS 约定）
+    if compose ps -q 2>/dev/null | grep -q .; then
+      exit 0
+    fi
+    exit 3
+    ;;
+  *)
+    echo "用法: $0 {start|stop|status}" >&2
+    exit 1
+    ;;
+esac

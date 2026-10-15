@@ -1,0 +1,11 @@
+[
+  {
+    "stepTitle": "安装说明",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "将以 Docker 方式安装 WorkBuddy2API 面板，服务端口固定为 7863。安装完成后在桌面打开「WorkBuddy2API 面板」，先在面板内添加工信使账号即可使用。账号与配置数据保存在 @appdata/wb2api-panel，升级与重装不会丢失。"
+      }
+    ]
+  }
+]

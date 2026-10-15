@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# 安装前：确认 Docker 可用（fnOS Docker 未就绪时给出可读错误）
+set -u
+if ! command -v docker >/dev/null 2>&1; then
+  msg="未找到 docker 命令：请先在 fnOS「设置 → Docker」中安装/启用 Docker"
+  echo "$msg" >&2
+  if [ -n "${TRIM_TEMP_LOGFILE:-}" ]; then
+    echo "$msg" >> "$TRIM_TEMP_LOGFILE"
+  fi
+  exit 1
+fi
+exit 0

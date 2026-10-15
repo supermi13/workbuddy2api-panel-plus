@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# 卸载前：应用文件还在，此时清理容器与 compose 项目（含网络/卷声明）。
+# 用户数据（@appdata/wb2api-panel）一律不删——由用户自行决定。
+set -u
+
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+APPDEST="${TRIM_APPDEST:-$(dirname "$(dirname "$SELF_DIR")")}"
+COMPOSE_FILE="$APPDEST/app/docker/docker-compose.yaml"
+
+if [ -f "$COMPOSE_FILE" ] && command -v docker >/dev/null 2>&1; then
+  docker compose -p wb2api-panel -f "$COMPOSE_FILE" down >/dev/null 2>&1 || true
+fi
+exit 0

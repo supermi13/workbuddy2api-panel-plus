@@ -1,0 +1,221 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "编译种类（image=GHCR 多架构镜像；exe=Windows/Linux 二进制；fpk=飞牛应用包；all=全部）"
+        required: true
+        default: image
+        type: choice
+        options: [image, exe, fpk, all]
+      publish_release:
+        description: "将 exe/fpk 产物发布为 Release 附件（tag 触发时自动发布，无需勾选）"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ============ 镜像（push 默认构建；手动选 image/all） ============
+  image:
+    if: github.event_name == 'push' || inputs.target == 'image' || inputs.target == 'all'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=ref,event=tag
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============ 二进制（手动选 exe/all）：Windows exe + Linux amd64/arm64 ============
+  exe:
+    if: inputs.target == 'exe' || inputs.target == 'all'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+            out: wb2api-windows-amd64.exe
+          - goos: linux
+            goarch: amd64
+            out: wb2api-linux-amd64
+          - goos: linux
+            goarch: arm64
+            out: wb2api-linux-arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: 计算版本标识
+        id: ver
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VER="${GITHUB_REF#refs/tags/}"; VER="${VER#v}"
+          else
+            VER="1.0.0-${{ github.sha }}"; VER="${VER:0:20}"
+          fi
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: 编译 ${{ matrix.out }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -trimpath -ldflags="-s -w" -o "dist/${{ matrix.out }}" ./cmd/server
+          ls -lh dist/
+
+      - name: 生成校验和
+        id: pack
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum "${{ matrix.out }}" | tee "${{ matrix.out }}.sha256"
+          ls -lh
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/${{ matrix.out }}
+            dist/${{ matrix.out }}.sha256
+          retention-days: 30
+
+  # ============ 飞牛 fpk（手动选 fpk/all） ============
+  fpk:
+    if: inputs.target == 'fpk' || inputs.target == 'all'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 计算版本标识
+        id: ver
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VER="${GITHUB_REF#refs/tags/}"; VER="${VER#v}"
+          else
+            VER="1.0.0-${{ github.sha }}"; VER="${VER:0:20}"
+          fi
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
+
+      - name: 组装 fpk 项目（compose 与 fnos/ 保持同源）
+        run: |
+          set -euo pipefail
+          rm -rf fpk-build
+          mkdir -p fpk-build/app/docker
+          cp -r fnos/fpk/. fpk-build/
+          # 单一事实来源：compose 从 fnos/docker-compose.yml 复制，避免两份漂移
+          cp fnos/docker-compose.yml fpk-build/app/docker/docker-compose.yaml
+          # 版本注入 manifest（tag 触发用 tag 号，否则用 1.0.0-<sha> 预发布号）
+          sed -i "s/^version=.*/version=${{ steps.ver.outputs.ver }}/" fpk-build/manifest
+          # fnpack 要求生命周期脚本可执行（git 里已存 755，这里兜底）
+          chmod +x fpk-build/cmd/*
+          grep '^version=' fpk-build/manifest
+
+      - name: 下载 fnpack
+        run: |
+          set -euo pipefail
+          curl -fsSL -o fnpack https://static2.fnnas.com/fnpack/fnpack-1.2.3-linux-amd64
+          chmod +x fnpack
+          ./fnpack --help >/dev/null
+
+      - name: fnpack build
+        run: |
+          set -euo pipefail
+          cd fpk-build
+          ../fnpack build --directory .
+          ls -lh *.fpk
+
+      - name: 重命名 + 校验和 + 上传 artifact
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.ver }}"
+          FPK=$(ls fpk-build/*.fpk | head -1)
+          OUT="wb2api-panel-${VER}-x86.fpk"
+          mv "$FPK" "$OUT"
+          sha256sum "$OUT" | tee "$OUT.sha256"
+          ls -lh "$OUT" "$OUT.sha256"
+
+      - name: 上传 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fpk-x86
+          path: |
+            wb2api-panel-*.fpk
+            wb2api-panel-*.fpk.sha256
+          retention-days: 30
+
+  # ============ 发布 Release（tag 触发自动发；手动勾选 publish_release 也发） ============
+  release:
+    needs: [exe, fpk]
+    if: >-
+      always() && needs.exe.result != 'failure' && needs.fpk.result != 'failure'
+      && (startsWith(github.ref, 'refs/tags/v') || inputs.publish_release)
+      && (needs.exe.result == 'success' || needs.fpk.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('build-{0}', github.sha) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('build-{0}', github.sha) }}
+          body: |
+            自动构建产物（commit ${{ github.sha }}）。
+
+            - `wb2api-panel-*-x86.fpk`：飞牛 fnOS 应用包（应用中心手动安装）
+            - `wb2api-windows-amd64.exe`：Windows 可执行文件
+            - `wb2api-linux-amd64` / `wb2api-linux-arm64`：Linux 二进制
+            - 镜像：`ghcr.io/${{ github.repository }}`（latest / sha 标签）
+
+            fpk 安装：飞牛「应用中心 → 手动安装 → 选择 fpk」。
+          files: |
+            artifacts/wb2api-*
+          fail_on_unmatched_files: false

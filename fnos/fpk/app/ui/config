@@ -1,0 +1,13 @@
+{
+  ".url": {
+    "wb2api-panel.main": {
+      "title": "WorkBuddy2API 面板",
+      "icon": "images/icon_64.png",
+      "type": "iframe",
+      "protocol": "http",
+      "port": "7863",
+      "url": "/panel/",
+      "allUsers": true
+    }
+  }
+}
