@@ -4,25 +4,25 @@
 
 | 方式 | 适合场景 | 产物 |
 |---|---|---|
-| A. fpk 应用包 | **ARM 飞牛机型**，应用中心管理（开始/停止/升级/卸载） | Actions 产出的 `-arm.fpk` |
-| B. SSH + compose | x86 飞牛机型，或喜欢手动控制 / fpk 安装失败时排查 | `fnos/docker-compose.yml` + `.env` |
-| C. Windows exe | x86 电脑无 Docker 场景直接跑 | Actions 产出的 `wb2api-windows-amd64.exe` |
+| A. fpk 应用包 | 日常使用，应用中心管理（开始/停止/升级/卸载） | Actions 产出的 `-x86.fpk` / `-arm.fpk` |
+| B. SSH + compose | 喜欢手动控制，或 fpk 安装失败时排查 | `fnos/docker-compose.yml` + `.env` |
+| C. Windows exe | 电脑无 Docker 场景直接跑 | Actions 产出的 `wb2api-windows-amd64.exe` |
 
 镜像由 CI 自动构建推送：`ghcr.io/supermi13/workbuddy2api-panel-plus`
 （**linux/amd64 + linux/arm64 多架构**，Docker 按本机架构自动拉取对应镜像）。
-**fpk 只发 ARM 包**（manifest `platform=arm`）；x86 设备不走 fpk，用 B 或 C。
+fpk 按架构分 **x86 / arm 两个包**，安装时按机型选（见下）。
 
 ---
 
-## A. fpk 应用包安装（仅 ARM 飞牛）
+## A. fpk 应用包安装
 
-1. 确认机型是 ARM：SSH 进飞牛跑 `uname -m`，`aarch64` 才用本方式；
-   `x86_64` 机型请走 B（SSH compose）或 C（exe）。
+1. 确认机型架构：SSH 进飞牛跑 `uname -m`——`x86_64` 选 x86 包，`aarch64` 选 arm 包。
 2. 下载 fpk（二选一）：
    - Releases 页：<https://github.com/supermi13/workbuddy2api-panel-plus/releases>
      （正式版建议打 `v*` tag 触发构建，版本号干净；手动构建的版本号形如 `1.0.0-<sha>`）
    - 或自己出包：Actions → **Build** → Run workflow → `target` 选 `fpk` →
-     勾选 `publish_release` → 从产生的 Release 下载 `wb2api-panel-*-arm.fpk`
+     勾选 `publish_release` → 从产生的 Release 下载 `wb2api-panel-*-x86.fpk`
+     或 `wb2api-panel-*-arm.fpk`
 3. 飞牛 **应用中心 → 设置/右上角 → 手动安装 → 选择 fpk**，按向导完成。
 4. 桌面打开「WorkBuddy2API 面板」（或浏览器访问 `http://飞牛IP:7863/panel/`），
    先在面板内添加工信使账号。
@@ -67,7 +67,7 @@ docker compose logs -f        # 看启动日志
 |---|---|
 | `target=image` | 多架构 Docker 镜像推 GHCR（linux/amd64 + linux/arm64；push main 时的默认行为） |
 | `target=exe` | `wb2api-windows-amd64.exe`（Windows 64 位，x86 电脑直接用） |
-| `target=fpk` | 飞牛应用包 `wb2api-panel-<版本>-arm.fpk`（仅 ARM 机型） |
+| `target=fpk` | 飞牛应用包两个：`wb2api-panel-<版本>-x86.fpk` + `wb2api-panel-<版本>-arm.fpk` |
 | `target=all` | 以上全部 |
 | `publish_release` | 把 exe/fpk 发成 Release 附件（打 `v*` tag 时自动发布，无需勾选） |
 
@@ -82,7 +82,8 @@ fnos/
 ├── docker-compose.yml        # 飞牛部署 compose（SSH 直部署 + fpk 内使用，同一份）
 ├── .env.example
 ├── fpk/                      # fpk 项目源码（fnpack 打包用）
-│   ├── manifest              # appname=wb2api-panel，platform=arm（只发 ARM 包），端口 7863
+│   ├── manifest              # appname=wb2api-panel，platform=x86，端口 7863
+│   │                         # （ARM 包由 CI 复制工程并注入 platform=arm 后打包）
 │   ├── cmd/                  # 生命周期脚本（compose up/down/status 转调）
 │   ├── config/               # privilege（package 用户）+ resource（docker-project）
 │   ├── wizard/               # 安装/升级/卸载说明
@@ -96,7 +97,7 @@ fnos/
 
 ## 已知限制
 
-- fpk 仅 ARM 机型（`platform=arm`）；x86 飞牛走 SSH compose（B），x86 电脑用 exe（C）
+- x86 / arm 两个 fpk 需按机型架构选择（`uname -m` 确认），装错架构包飞牛会拒绝安装
 - `os_min_version=1.2.0` 按官方示例值声明，未在最低版本设备上实测；
   如安装失败请先升级 fnOS
 - 未在真实 fnOS 设备上跑过完整安装/升级/卸载回归（CI 只保证 fnpack 打包通过），
