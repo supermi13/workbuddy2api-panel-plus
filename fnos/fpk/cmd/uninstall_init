@@ -4,8 +4,16 @@
 set -u
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
-APPDEST="${TRIM_APPDEST:-$(dirname "$(dirname "$SELF_DIR")")}"
-COMPOSE_FILE="$APPDEST/app/docker/docker-compose.yaml"
+APPDEST_FALLBACK="$(dirname "$(dirname "$SELF_DIR")")"
+if [ -n "${TRIM_APPDEST:-}" ]; then
+  APPDEST="$TRIM_APPDEST"
+elif [ -f "$APPDEST_FALLBACK/app/docker/docker-compose.yaml" ]; then
+  APPDEST="$APPDEST_FALLBACK/app"
+else
+  APPDEST="$APPDEST_FALLBACK/target"
+fi
+# 布局映射：项目 app/ → 安装后 target/，compose 在 $APPDEST/docker/（无 app/ 前缀）
+COMPOSE_FILE="$APPDEST/docker/docker-compose.yaml"
 
 if [ -f "$COMPOSE_FILE" ] && command -v docker >/dev/null 2>&1; then
   docker compose -p wb2api-panel -f "$COMPOSE_FILE" down >/dev/null 2>&1 || true

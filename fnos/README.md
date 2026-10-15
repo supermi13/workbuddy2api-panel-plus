@@ -30,10 +30,14 @@ fpk 按架构分 **x86 / arm 两个包**，安装时按机型选（见下）。
 **数据位置**：`@appdata/wb2api-panel`（账号、配置、日志）。升级/重装不丢失；
 卸载也只删应用和容器，不删数据——要彻底清除请在文件管理器中手动删该目录。
 
-**改端口**：端口固定 7863（桌面入口与 `service_port` 都写死）。
-如 7863 被占：SSH 进去改 `target/app/docker/docker-compose.yaml` 的
-`WB2API_PORT` 环境变量或 ports 映射，然后应用中心里停止 → 启动。
-注意改后桌面入口仍指向 7863，需手动用新端口访问面板。
+**改端口**（默认 7863，被占用时）：
+- **推荐**：飞牛 **应用中心 → 本应用 → 设置**，「服务端口」改成 1024-65535 的
+  空闲端口 → 保存 → **重启应用**。桌面入口会自动指向新端口。
+- 安装时的安装向导里也能直接改（默认值 7863）。
+- SSH 方式：编辑 `@appdata/wb2api-panel/port`（一行整数）后重启应用；
+  此方式桌面入口不跟随，需手动访问 `http://飞牛IP:<端口>/panel/`。
+- 端口被其他进程占用时应用会启动失败，日志会给出明确提示与排查命令
+  （`ss -ltnp | grep <端口>`）。
 
 ## B. SSH + compose 直部署
 
@@ -86,14 +90,22 @@ fnos/
 │   │                         # （ARM 包由 CI 复制工程并注入 platform=arm 后打包）
 │   ├── cmd/                  # 生命周期脚本（compose up/down/status 转调）
 │   ├── config/               # privilege（package 用户）+ resource（docker-project）
-│   ├── wizard/               # 安装/升级/卸载说明
+│   ├── wizard/               # 安装/设置向导（端口可改）/ 升级/卸载说明
 │   ├── app/
 │   │   ├── docker/docker-compose.yaml   # CI 组装时从 ../docker-compose.yml 复制
-│   │   ├── ui/               # 桌面入口（iframe → http://IP:7863/panel/）
+│   │   ├── ui/               # 桌面入口（iframe → http://IP:<端口>/panel/）
 │   │   └── config.example.json
 │   ├── ICON.PNG / ICON_256.PNG
 └── 飞牛部署说明.md（本文件）
 ```
+
+**安装后布局映射**（fnpack 官方规则，排错常查）：项目 `app/` 目录的内容 →
+安装后的 `target/`（即 `TRIM_APPDEST`）。所以脚本里 compose 在
+`$TRIM_APPDEST/docker/docker-compose.yaml`、桌面入口在
+`$TRIM_APPDEST/ui/config`、示例配置在 `$TRIM_APPDEST/config.example.json`，
+**都不带 `app/` 前缀**；`manifest/cmd/config/wizard` 装在 `target` 的上级目录
+（与 `cmd/` 同级）。数据目录 `TRIM_PKGVAR` = `@appdata/wb2api-panel`，
+端口文件就在那里的 `port`。
 
 ## 已知限制
 

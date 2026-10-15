@@ -9,12 +9,23 @@ set -u
 
 APP_NAME="wb2api-panel"
 
-# 从脚本自身位置推导安装目录（.../target/cmd/main → .../target），
-# 无 TRIM_APPDEST 时（如手动调试）也能正确定位；不硬编码绝对路径
+# 从脚本自身位置推导安装目录（.../cmd/main → .../{appname}），
+# 无 TRIM_APPDEST 时（如手动调试）也能正确定位；不硬编码绝对路径。
+# 布局映射（fnpack 官方）：项目 app/ → 安装后 target/（即 TRIM_APPDEST），
+# 所以 compose 在 $TRIM_APPDEST/docker/docker-compose.yaml（无 app/ 前缀），
+# 桌面入口在 $TRIM_APPDEST/ui/config
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 APPDEST_FALLBACK="$(dirname "$(dirname "$SELF_DIR")")"
-APPDEST="${TRIM_APPDEST:-$APPDEST_FALLBACK}"
-COMPOSE_DIR="$APPDEST/app/docker"
+if [ -n "${TRIM_APPDEST:-}" ]; then
+  APPDEST="$TRIM_APPDEST"
+elif [ -f "$APPDEST_FALLBACK/app/docker/docker-compose.yaml" ]; then
+  # 仓库内手动调试：仓库的 app/ 对应安装后的 target
+  APPDEST="$APPDEST_FALLBACK/app"
+else
+  # 安装布局兜底：target 与 cmd/ 同级
+  APPDEST="$APPDEST_FALLBACK/target"
+fi
+COMPOSE_DIR="$APPDEST/docker"
 COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yaml"
 
 log() { echo "[wb2api-panel] $*"; }
@@ -46,8 +57,30 @@ case "${1:-}" in
     export WB2API_DATA_DIR="${TRIM_PKGVAR:-$COMPOSE_DIR/data}/data"
     mkdir -p "$WB2API_CONFIG_DIR" "$WB2API_AUTHS_DIR" "$WB2API_DATA_DIR"
     chown -R "$PUID:$PGID" "$WB2API_CONFIG_DIR" "$WB2API_AUTHS_DIR" "$WB2API_DATA_DIR" 2>/dev/null || true
+    # 端口：安装向导/设置表单的值由 callback 落盘到 @appdata/wb2api-panel/port
+    # （wizard_* 环境变量只在 callback 内可见，main 必须读文件）；无文件时用
+    # manifest 声明的默认端口。compose 的 ${WB2API_PORT:-7863} 接管映射
+    PORT_FILE="${TRIM_PKGVAR:-$COMPOSE_DIR/data}/port"
+    PORT="${TRIM_SERVICE_PORT:-7863}"
+    [ -f "$PORT_FILE" ] && PORT="$(cat "$PORT_FILE" 2>/dev/null)"
+    if ! printf '%s' "$PORT" | grep -qE '^[0-9]+$'; then
+      fail "端口配置无效: '$PORT'（$PORT_FILE 应为 1024-65535 的整数；可在应用中心「设置」改正）"
+    fi
+    PORT_NUM=$((10#$PORT))
+    if [ "$PORT_NUM" -lt 1024 ] || [ "$PORT_NUM" -gt 65535 ]; then
+      fail "端口配置超出范围: $PORT_NUM（$PORT_FILE 应为 1024-65535 的整数）"
+    fi
+    export WB2API_PORT="$PORT_NUM"
+    # 端口占用预检：仅在本应用容器未运行时查（在跑的容器由 compose up 自行处理）；
+    # 宿主没有 ss 命令时跳过，交给 docker 自己报错
+    if ! compose ps -q 2>/dev/null | grep -q .; then
+      if command -v ss >/dev/null 2>&1 \
+         && ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$PORT_NUM$"; then
+        fail "端口 $PORT_NUM 已被其他进程占用。处理：① 应用中心 → 本应用「设置」改「服务端口」保存后重启；② 或 SSH 执行 ss -ltnp | grep $PORT_NUM 查占用进程"
+      fi
+    fi
     compose up -d || fail "docker compose up -d 失败（详见 docker compose 日志）"
-    log "已启动，端口 7863"
+    log "已启动，端口 $PORT_NUM"
     ;;
   stop)
     compose down || true

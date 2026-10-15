@@ -1,3 +1,34 @@
 #!/usr/bin/env bash
-# 配置变更后：同上，面板内配置热生效，无需额外动作。
+# 配置变更后（应用中心「设置」表单）：把「服务端口」落盘到
+# @appdata/wb2api-panel/port 供 main start 读取，并同步桌面入口配置。
+# 面板页面内的账号/密钥/模型等配置热生效，无需本脚本处理。
+set -u
+
+# 未提交端口字段（如表单后续增加了其他项）时不动现有端口，避免误重置
+if [ "${wizard_port+set}" != "set" ]; then
+  exit 0
+fi
+PORT="$wizard_port"
+VAR_DIR="${TRIM_PKGVAR:-}"
+APPDEST="${TRIM_APPDEST:-}"
+
+if ! printf '%s' "$PORT" | grep -qE '^[0-9]+$'; then
+  echo "服务端口必须是数字: '$PORT'" >&2
+  exit 1
+fi
+PORT_NUM=$((10#$PORT))
+if [ "$PORT_NUM" -lt 1024 ] || [ "$PORT_NUM" -gt 65535 ]; then
+  echo "服务端口超出范围（1024-65535）: $PORT_NUM" >&2
+  exit 1
+fi
+
+[ -n "$VAR_DIR" ] || { echo "TRIM_PKGVAR 未设置：本脚本应由 fnOS 配置流程调用" >&2; exit 1; }
+printf '%s\n' "$PORT_NUM" > "$VAR_DIR/port"
+
+# 桌面入口端口同步：设置里改了端口，桌面图标随之指向新端口
+# （项目 app/ui/config 安装后落在 $APPDEST/ui/config）
+if [ -n "$APPDEST" ] && [ -f "$APPDEST/ui/config" ]; then
+  sed -i "s|\"port\": \"[0-9]*\"|\"port\": \"$PORT_NUM\"|" "$APPDEST/ui/config"
+fi
+echo "面板端口已设置为 $PORT_NUM，重启应用后生效"
 exit 0

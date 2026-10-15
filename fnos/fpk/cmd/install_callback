@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 安装后：准备数据目录（@appdata 规范落点），首次安装落示例配置，
-# 修正属主供容器内 app 用户写入。幂等，可重复执行。
+# 落盘安装向导选择的端口并烙进桌面入口，修正属主。幂等，可重复执行。
 set -u
 
 VAR_DIR="${TRIM_PKGVAR:-}"
@@ -9,11 +9,32 @@ APPDEST="${TRIM_APPDEST:-}"
 # 仅在 fnOS 安装流程中运行（系统注入 TRIM_PKGVAR）；不硬编码回退路径
 [ -n "$VAR_DIR" ] || { echo "TRIM_PKGVAR 未设置：本脚本应由 fnOS 安装流程调用" >&2; exit 1; }
 
+# 端口：向导 field 名即环境变量名（wizard_port），仅在 callback 内可见，
+# 落盘到 @appdata/wb2api-panel/port 供 main start 读取（main 读不到 wizard_*）
+PORT="${wizard_port:-${TRIM_SERVICE_PORT:-7863}}"
+if ! printf '%s' "$PORT" | grep -qE '^[0-9]+$'; then
+  echo "服务端口必须是数字: '$PORT'" >&2
+  exit 1
+fi
+PORT_NUM=$((10#$PORT))
+if [ "$PORT_NUM" -lt 1024 ] || [ "$PORT_NUM" -gt 65535 ]; then
+  echo "服务端口超出范围（1024-65535）: $PORT_NUM" >&2
+  exit 1
+fi
+
 mkdir -p "$VAR_DIR/config" "$VAR_DIR/auths" "$VAR_DIR/data"
+printf '%s\n' "$PORT_NUM" > "$VAR_DIR/port"
 
 # 首次安装才复制示例配置；升级/重装时保留用户已有配置
 if [ ! -f "$VAR_DIR/config/config.json" ] && [ -n "$APPDEST" ] && [ -f "$APPDEST/config.example.json" ]; then
   cp "$APPDEST/config.example.json" "$VAR_DIR/config/config.json"
+fi
+
+# 桌面入口端口烙值：项目 app/ui/config 安装后落在 $APPDEST/ui/config
+# （布局映射 app/ → target/），端口变了桌面图标才指向新端口。
+# 只替换 port 行，不动其他字段
+if [ -n "$APPDEST" ] && [ -f "$APPDEST/ui/config" ]; then
+  sed -i "s|\"port\": \"[0-9]*\"|\"port\": \"$PORT_NUM\"|" "$APPDEST/ui/config"
 fi
 
 chown -R "${TRIM_RUN_UID:-10001}:${TRIM_RUN_GID:-10001}" "$VAR_DIR" 2>/dev/null || true

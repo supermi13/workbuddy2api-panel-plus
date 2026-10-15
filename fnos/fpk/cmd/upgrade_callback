@@ -13,5 +13,15 @@ if [ ! -f "$VAR_DIR/config/config.json" ] && [ -n "$APPDEST" ] && [ -f "$APPDEST
   cp "$APPDEST/config.example.json" "$VAR_DIR/config/config.json"
 fi
 
+# 桌面入口端口恢复烙值：升级会替换 target 下文件（ui/config 回到默认 7863），
+# 用 @appdata 里留存的端口文件重新烙，保证桌面图标仍指向用户设定的端口
+if [ -n "$APPDEST" ] && [ -f "$APPDEST/ui/config" ] && [ -f "$VAR_DIR/port" ]; then
+  KEPT_PORT="$(cat "$VAR_DIR/port" 2>/dev/null)"
+  case "$KEPT_PORT" in
+    ''|*[!0-9]*) ;;
+    *) sed -i "s|\"port\": \"[0-9]*\"|\"port\": \"$KEPT_PORT\"|" "$APPDEST/ui/config" ;;
+  esac
+fi
+
 chown -R "${TRIM_RUN_UID:-10001}:${TRIM_RUN_GID:-10001}" "$VAR_DIR" 2>/dev/null || true
 exit 0
