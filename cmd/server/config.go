@@ -30,6 +30,11 @@ type Config struct {
 	Panel struct {
 		// PackageDetailLimit 积分构成页单账号默认展示的最近到期包数；<=0 回落 5。
 		PackageDetailLimit int `json:"package_detail_limit"`
+		// FrameAncestors 面板 iframe 嵌套策略：none（默认，禁止任何站点嵌入——
+		// 防点击劫持）/ same-site（仅同一主机任意端口可嵌入，NAS 桌面入口
+		// iframe 场景）/ http(s):// 开头的来源列表（逗号分隔）。
+		// 装配期读取，改动需重启进程；无法识别的值按 none 处理。
+		FrameAncestors string `json:"frame_ancestors"`
 	} `json:"panel"`
 
 	Logging struct {
@@ -288,6 +293,7 @@ func Default() *Config {
 	c.Cooldown.SoftRateMax = "2h"
 	c.Server.ReadTimeout = "300s"
 	c.Panel.PackageDetailLimit = 5
+	c.Panel.FrameAncestors = "none"
 	c.Logging.RequestArchiveEnabled = true
 	c.Logging.RequestRetentionDays = 7
 	c.Logging.RequestArchiveMaxMB = 100
@@ -471,6 +477,9 @@ func applyEnv(c *Config) {
 	}
 	if v := os.Getenv("WB2A_API_KEY"); v != "" {
 		c.APIKey = v
+	}
+	if v := os.Getenv("WB2A_FRAME_ANCESTORS"); v != "" {
+		c.Panel.FrameAncestors = v
 	}
 	if v := os.Getenv("WB2A_AUTH_DIR"); v != "" {
 		c.AuthDir = v

@@ -27,6 +27,12 @@ services:
     command: ["/app/wb2api", "-config", "/app/config/config.json"]
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      # iframe 嵌套策略：飞牛桌面入口以 iframe 嵌面板（浏览器视角是
+      # http://NAS-IP:7863 嵌在 http://NAS-IP 的桌面页面里，跨端口同站），
+      # 面板默认的 frame-ancestors 'none' 会拦掉它（Firefox 报
+      # "将不允许显示嵌入了其他网站的页面"）。same-site = 仅放行同一主机
+      # 任意端口，外部站点仍被拦；填 none 可恢复默认的禁止嵌入。
+      - WB2A_FRAME_ANCESTORS=${WB2A_FRAME_ANCESTORS:-same-site}
     ports:
       - "${WB2API_PORT:-7863}:7863"
     volumes:

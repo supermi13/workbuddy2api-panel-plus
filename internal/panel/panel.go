@@ -42,6 +42,13 @@ type Config struct {
 	RedisMode string               // "upstash" / "noop"，仅观测透出
 	Version   string               // 面板版本号（展示用）
 
+	// FrameAncestors iframe 嵌套策略（config panel.frame_ancestors /
+	// env WB2A_FRAME_ANCESTORS）："" 或 "none" = 禁止任何站点嵌入（默认）；
+	// "same-site" = 仅同一主机任意端口可嵌入（NAS 桌面入口 iframe 场景）；
+	// 或 http(s):// 开头的来源列表（逗号分隔）。New 时经 normalizeFrameMode
+	// 规范化，无法识别的值 fail closed 回 "none"。装配期读取，改动需重启进程。
+	FrameAncestors string
+
 	// Keys 对外分发的子密钥库（可选；nil = 密钥页返回 501）。
 	Keys *apikeys.Store
 
@@ -136,6 +143,7 @@ func New(cfg Config) *Panel {
 	if cfg.RedisMode == "" {
 		cfg.RedisMode = "noop"
 	}
+	cfg.FrameAncestors = normalizeFrameMode(cfg.FrameAncestors)
 	p := &Panel{
 		cfg:     cfg,
 		mux:     http.NewServeMux(),
@@ -201,7 +209,7 @@ func (p *Panel) routes() {
 // ServeHTTP 统一入口：先写安全响应头再分发，保证页面、静态资源、API
 // 与 401 错误响应全都带上（API 也可能在浏览器里被直接打开）。
 func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	setSecurityHeaders(w)
+	p.setSecurityHeaders(w, r)
 	p.mux.ServeHTTP(w, r)
 }
 

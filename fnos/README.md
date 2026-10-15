@@ -39,6 +39,34 @@ fpk 按架构分 **x86 / arm 两个包**，安装时按机型选（见下）。
 - 端口被其他进程占用时应用会启动失败，日志会给出明确提示与排查命令
   （`ss -ltnp | grep <端口>`）。
 
+**桌面图标打不开 / Firefox 报「将不允许显示嵌入了其他网站的页面」**：
+
+飞牛桌面入口是用 iframe 把 `http://飞牛IP:<端口>/panel/` 嵌进桌面页面的。
+面板服务默认下发 `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'`
+（防点击劫持），浏览器会拒绝渲染这个 iframe——这就是那条报错的原因。
+本部署的 compose 已默认放行：`WB2A_FRAME_ANCESTORS=same-site`，
+即**仅允许同一主机、任意端口嵌入**（桌面入口正是跨端口同站场景），
+外部网站嵌入仍被拦截。各取值的含义：
+
+| `frame_ancestors` | 行为 |
+|---|---|
+| `none`（默认值） | 禁止任何网页嵌入——最安全，但桌面图标不可用 |
+| `same-site`（本部署默认） | 仅同一主机/IP 任意端口可嵌入；外部站点一律拒绝 |
+| `http://ip1,http://ip2` | 显式来源白名单（逗号分隔） |
+
+改法（改完都要**重启应用/容器**才生效）：
+- 应用中心 → 本应用 → **设置** 里目前只有端口项；嵌套策略走下面两种：
+- SSH 编辑 `@appdata/wb2api-panel/config/config.json` 的
+  `panel.frame_ancestors` 字段；或
+- 编辑安装目录下的 `docker/docker-compose.yaml`，把
+  `WB2A_FRAME_ANCESTORS` 改成目标值。
+- 面板内 **配置页 → 服务 → 「iframe 嵌套策略」** 也能改（保存后重启进程）。
+- 不想改服务端：临时方案是点报错页上的「请在新窗口中打开」，
+  或直接把 `http://飞牛IP:<端口>/panel/` 加浏览器书签。
+
+> 历史包袱：2026-10-16 之前的镜像/包装完面板是写死禁止嵌入的，
+> 桌面图标必然报这个错。升级到支持 `frame_ancestors` 配置的镜像并重启即可。
+
 ## B. SSH + compose 直部署
 
 ```bash

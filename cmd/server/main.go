@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -282,6 +283,9 @@ func main() {
 		Version:     appVersion,
 		Keys:        ks,
 		Live:        live,
+		// iframe 嵌套策略（panel.frame_ancestors / WB2A_FRAME_ANCESTORS）：
+		// 飞牛等 NAS 桌面入口以 iframe 嵌面板，需 same-site 放行同主机跨端口嵌入
+		FrameAncestors: cfg.Panel.FrameAncestors,
 		// 模型上限探测数据（scripts/probe_max_tokens.py --panel-out 写入）：
 		// 与 state 文件同目录，缺省 data/output_probes.json。
 		ProbeFile:  stateSibling(cfg.StateFile, "output_probes.json"),
@@ -544,6 +548,11 @@ func restartRequiredFields(c *Config) []string {
 	out = append(out, "session_sticky.ttl", "session_sticky.gc_interval")
 	out = append(out, "logging.request_archive_enabled", "logging.request_retention_days", "logging.request_archive_max_mb")
 	out = append(out, "server.read_timeout")
+	// panel.frame_ancestors 在装配期被面板捕获（panel.New），改了必须重启才生效；
+	// 仅在实际配了非默认值时才提示，避免每次保存都刷一条无关项。
+	if c.Panel.FrameAncestors != "" && !strings.EqualFold(c.Panel.FrameAncestors, "none") {
+		out = append(out, "panel.frame_ancestors")
+	}
 	return out
 }
 

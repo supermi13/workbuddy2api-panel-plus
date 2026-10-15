@@ -108,6 +108,26 @@ func TestEnvOverride(t *testing.T) {
 	}
 }
 
+// WB2A_FRAME_ANCESTORS 覆盖 panel.frame_ancestors（飞牛 compose 靠它开 same-site）。
+func TestEnvOverrideFrameAncestors(t *testing.T) {
+	t.Setenv("WB2A_FRAME_ANCESTORS", "same-site")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Panel.FrameAncestors != "same-site" {
+		t.Errorf("panel.frame_ancestors=%q want same-site", c.Panel.FrameAncestors)
+	}
+}
+
+// 缺省 frame_ancestors = none（禁止嵌入），保持上游安全姿态。
+func TestFrameAncestorsDefaultNone(t *testing.T) {
+	c := Default()
+	if c.Panel.FrameAncestors != "none" {
+		t.Errorf("default panel.frame_ancestors=%q want none", c.Panel.FrameAncestors)
+	}
+}
+
 func TestBadDuration(t *testing.T) {
 	dir := t.TempDir()
 	fp := filepath.Join(dir, "c.json")
