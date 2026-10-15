@@ -7,20 +7,23 @@
 | A. fpk 应用包 | 日常使用，应用中心管理（开始/停止/升级/卸载） | Actions 产出的 `.fpk` |
 | B. SSH + compose | 喜欢手动控制，或 fpk 安装失败时排查 | `fnos/docker-compose.yml` + `.env` |
 
-镜像由 CI 自动构建推送：`ghcr.io/supermi13/workbuddy2api-panel-plus`（linux/amd64）。
-**ARM 机型暂时不支持**（CI 只构建 amd64 镜像，fpk 的 `platform=x86`），后续补。
+镜像由 CI 自动构建推送：`ghcr.io/supermi13/workbuddy2api-panel-plus`
+（**linux/amd64 + linux/arm64 多架构**，Docker 按本机架构自动拉取对应镜像）。
+fpk 按架构分 **x86 / arm 两个包**，安装时按机型选（见下）。
 
 ---
 
 ## A. fpk 应用包安装
 
-1. 下载 fpk（二选一）：
+1. 确认机型架构：SSH 进飞牛跑 `uname -m`——`x86_64` 选 x86 包，`aarch64` 选 arm 包。
+2. 下载 fpk（二选一）：
    - Releases 页：<https://github.com/supermi13/workbuddy2api-panel-plus/releases>
      （正式版建议打 `v*` tag 触发构建，版本号干净；手动构建的版本号形如 `1.0.0-<sha>`）
    - 或自己出包：Actions → **Build** → Run workflow → `target` 选 `fpk` →
      勾选 `publish_release` → 从产生的 Release 下载 `wb2api-panel-*-x86.fpk`
-2. 飞牛 **应用中心 → 设置/右上角 → 手动安装 → 选择 fpk**，按向导完成。
-3. 桌面打开「WorkBuddy2API 面板」（或浏览器访问 `http://飞牛IP:7863/panel/`），
+     或 `wb2api-panel-*-arm.fpk`
+3. 飞牛 **应用中心 → 设置/右上角 → 手动安装 → 选择 fpk**，按向导完成。
+4. 桌面打开「WorkBuddy2API 面板」（或浏览器访问 `http://飞牛IP:7863/panel/`），
    先在面板内添加工信使账号。
 
 **数据位置**：`@appdata/wb2api-panel`（账号、配置、日志）。升级/重装不丢失；
@@ -53,9 +56,9 @@ docker compose logs -f        # 看启动日志
 
 | 输入 | 产出 |
 |---|---|
-| `target=image` | 多架构 Docker 镜像推 GHCR（push main 时的默认行为） |
+| `target=image` | 多架构 Docker 镜像推 GHCR（linux/amd64 + linux/arm64；push main 时的默认行为） |
 | `target=exe` | `wb2api-windows-amd64.exe` + `wb2api-linux-amd64` + `wb2api-linux-arm64` |
-| `target=fpk` | 飞牛应用包 `wb2api-panel-<版本>-x86.fpk` |
+| `target=fpk` | 飞牛应用包两个：`wb2api-panel-<版本>-x86.fpk` + `wb2api-panel-<版本>-arm.fpk` |
 | `target=all` | 以上全部 |
 | `publish_release` | 把 exe/fpk 发成 Release 附件（打 `v*` tag 时自动发布，无需勾选） |
 
@@ -71,6 +74,7 @@ fnos/
 ├── .env.example
 ├── fpk/                      # fpk 项目源码（fnpack 打包用）
 │   ├── manifest              # appname=wb2api-panel，platform=x86，端口 7863
+│   │                         # （ARM 包由 CI 复制工程并注入 platform=arm 后打包）
 │   ├── cmd/                  # 生命周期脚本（compose up/down/status 转调）
 │   ├── config/               # privilege（package 用户）+ resource（docker-project）
 │   ├── wizard/               # 安装/升级/卸载说明
@@ -84,7 +88,7 @@ fnos/
 
 ## 已知限制
 
-- 仅 x86（amd64 镜像）；ARM 飞牛机型等 CI 补 arm64 镜像 + `platform=arm` fpk
+- x86 / arm 两个 fpk 需按机型架构选择（`uname -m` 确认），装错架构包飞牛会拒绝安装
 - `os_min_version=1.2.0` 按官方示例值声明，未在最低版本设备上实测；
   如安装失败请先升级 fnOS
 - 未在真实 fnOS 设备上跑过完整安装/升级/卸载回归（CI 只保证 fnpack 打包通过），

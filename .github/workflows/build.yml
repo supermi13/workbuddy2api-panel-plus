@@ -53,11 +53,13 @@ jobs:
             type=sha,format=short
             type=ref,event=tag
 
+      # 多架构：x86 飞牛拉 amd64，ARM 飞牛拉 arm64（同一 latest tag 自动分流）。
+      # fpk 的 manifest 是 platform=all，能装的前提就是这里是多架构镜像
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -151,7 +153,7 @@ jobs:
           sed -i "s/^version=.*/version=${{ steps.ver.outputs.ver }}/" fpk-build/manifest
           # fnpack 要求生命周期脚本可执行（git 里已存 755，这里兜底）
           chmod +x fpk-build/cmd/*
-          grep '^version=' fpk-build/manifest
+          grep -E '^(version|platform)=' fpk-build/manifest
 
       - name: 下载 fnpack
         run: |
@@ -160,14 +162,17 @@ jobs:
           chmod +x fnpack
           ./fnpack --help >/dev/null
 
-      - name: fnpack build
+      # x86 包：直接用源工程（manifest 即 platform=x86）。
+      # fnpack 只有 amd64 官方构建，但打包只是文本/图标组装，与目标架构无关，
+      # 两个包都在 amd64 runner 上出，ARM 包仅 manifest 的 platform 不同
+      - name: fnpack build（x86）
         run: |
           set -euo pipefail
           cd fpk-build
           ../fnpack build --directory .
           ls -lh *.fpk
 
-      - name: 重命名 + 校验和 + 上传 artifact
+      - name: 重命名 x86 产物 + 校验和
         run: |
           set -euo pipefail
           VER="${{ steps.ver.outputs.ver }}"
@@ -177,10 +182,35 @@ jobs:
           sha256sum "$OUT" | tee "$OUT.sha256"
           ls -lh "$OUT" "$OUT.sha256"
 
+      # ARM 包：同一工程复制一份，只把 manifest 的 platform 换成 arm，重新打包。
+      # ARM 飞牛设备装这个包；镜像侧由多架构 latest 自动分流到 arm64
+      - name: fnpack build（arm）
+        run: |
+          set -euo pipefail
+          rm -rf fpk-build-arm
+          cp -r fpk-build fpk-build-arm
+          # 清掉复制过来的构建残留，保证产物只来自本次打包
+          rm -f fpk-build-arm/*.fpk
+          sed -i "s/^platform=.*/platform=arm/" fpk-build-arm/manifest
+          grep -E '^(version|platform)=' fpk-build-arm/manifest
+          cd fpk-build-arm
+          ../fnpack build --directory .
+          ls -lh *.fpk
+
+      - name: 重命名 arm 产物 + 校验和
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.ver }}"
+          FPK=$(ls fpk-build-arm/*.fpk | head -1)
+          OUT="wb2api-panel-${VER}-arm.fpk"
+          mv "$FPK" "$OUT"
+          sha256sum "$OUT" | tee "$OUT.sha256"
+          ls -lh wb2api-panel-*.fpk wb2api-panel-*.fpk.sha256
+
       - name: 上传 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fpk-x86
+          name: fpk
           path: |
             wb2api-panel-*.fpk
             wb2api-panel-*.fpk.sha256
@@ -210,12 +240,14 @@ jobs:
           body: |
             自动构建产物（commit ${{ github.sha }}）。
 
-            - `wb2api-panel-*-x86.fpk`：飞牛 fnOS 应用包（应用中心手动安装）
+            - `wb2api-panel-*-x86.fpk`：飞牛 fnOS 应用包（x86 机型，manifest platform=x86）
+            - `wb2api-panel-*-arm.fpk`：飞牛 fnOS 应用包（ARM 机型，manifest platform=arm）
             - `wb2api-windows-amd64.exe`：Windows 可执行文件
             - `wb2api-linux-amd64` / `wb2api-linux-arm64`：Linux 二进制
-            - 镜像：`ghcr.io/${{ github.repository }}`（latest / sha 标签）
+            - 镜像：`ghcr.io/${{ github.repository }}`（linux/amd64 + linux/arm64 多架构，latest / sha 标签）
 
-            fpk 安装：飞牛「应用中心 → 手动安装 → 选择 fpk」。
+            fpk 安装：飞牛「应用中心 → 手动安装 → 选择 fpk」。按机型架构选包
+            （SSH 跑 `uname -m`：x86_64 选 x86 包，aarch64 选 arm 包）。
           files: |
             artifacts/wb2api-*
           fail_on_unmatched_files: false
